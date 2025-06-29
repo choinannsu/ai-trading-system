@@ -1,0 +1,195 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai_trading_postgres
+    environment:
+      POSTGRES_DB: ai_trading
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/databases/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # TimescaleDB for time-series data
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: ai_trading_timescaledb
+    environment:
+      POSTGRES_DB: timescale_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./infrastructure/databases/timescale_init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Redis for caching and message broker
+  redis:
+    image: redis:7-alpine
+    container_name: ai_trading_redis
+    command: redis-server --appendonly yes --requirepass redis123
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Celery Worker for background tasks
+  celery:
+    build: .
+    container_name: ai_trading_celery
+    command: celery -A infrastructure.schedulers.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://admin:admin123@postgres:5432/ai_trading
+      - REDIS_URL=redis://:redis123@redis:6379/0
+      - CELERY_BROKER_URL=redis://:redis123@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis123@redis:6379/1
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Celery Beat for scheduled tasks
+  celery-beat:
+    build: .
+    container_name: ai_trading_celery_beat
+    command: celery -A infrastructure.schedulers.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://admin:admin123@postgres:5432/ai_trading
+      - REDIS_URL=redis://:redis123@redis:6379/0
+      - CELERY_BROKER_URL=redis://:redis123@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis123@redis:6379/1
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Flower for monitoring Celery tasks
+  flower:
+    build: .
+    container_name: ai_trading_flower
+    command: celery -A infrastructure.schedulers.celery_app flower --port=5555
+    environment:
+      - CELERY_BROKER_URL=redis://:redis123@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:redis123@redis:6379/1
+      - FLOWER_BASIC_AUTH=admin:admin123
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Main Trading Application
+  trading_app:
+    build: .
+    container_name: ai_trading_app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      - DATABASE_URL=postgresql://admin:admin123@postgres:5432/ai_trading
+      - TIMESCALE_URL=postgresql://admin:admin123@timescaledb:5432/timescale_db
+      - REDIS_URL=redis://:redis123@redis:6379/0
+      - ENVIRONMENT=development
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - timescaledb
+      - redis
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Grafana for monitoring and visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai_trading_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3000:3000"
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai_trading_prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+  # Jupyter Notebook for analysis and development
+  jupyter:
+    build: .
+    container_name: ai_trading_jupyter
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token=''
+    environment:
+      - DATABASE_URL=postgresql://admin:admin123@postgres:5432/ai_trading
+      - TIMESCALE_URL=postgresql://admin:admin123@timescaledb:5432/timescale_db
+      - REDIS_URL=redis://:redis123@redis:6379/0
+    volumes:
+      - .:/app
+      - ./notebooks:/app/notebooks
+    ports:
+      - "8888:8888"
+    depends_on:
+      - postgres
+      - timescaledb
+      - redis
+    networks:
+      - ai_trading_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  timescale_data:
+  redis_data:
+  grafana_data:
+  prometheus_data:
+
+networks:
+  ai_trading_network:
+    driver: bridge
