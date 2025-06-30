@@ -7,11 +7,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml
-from pydantic import BaseSettings, Field, validator
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
 
-class DatabaseConfig(BaseSettings):
+class ConfigDatabaseSettings(BaseSettings):
     """Database configuration"""
     
     url: str = Field(..., description="Database connection URL")
@@ -31,8 +32,8 @@ class RedisConfig(BaseSettings):
 class TradingConfig(BaseSettings):
     """Trading configuration"""
     
-    initial_capital: float = Field(..., description="Initial trading capital")
-    monthly_investment: float = Field(..., description="Monthly additional investment")
+    initial_capital: float = Field(default=10000.0, description="Initial trading capital")
+    monthly_investment: float = Field(default=1000.0, description="Monthly additional investment")
     max_risk_per_trade: float = Field(default=0.02, description="Maximum risk per trade")
     max_daily_loss: float = Field(default=0.05, description="Maximum daily loss")
     max_drawdown: float = Field(default=0.15, description="Maximum drawdown")
@@ -61,6 +62,11 @@ class APIConfig(BaseSettings):
     # Upbit
     upbit_access_key: Optional[str] = Field(default=None, env="UPBIT_ACCESS_KEY")
     upbit_secret_key: Optional[str] = Field(default=None, env="UPBIT_SECRET_KEY")
+    
+    # KIS (Korea Investment Securities)
+    kis_api_key: Optional[str] = Field(default=None, env="KIS_API_KEY")
+    kis_secret_key: Optional[str] = Field(default=None, env="KIS_SECRET_KEY")
+    kis_account_no: Optional[str] = Field(default=None, env="KIS_ACCOUNT_NO")
     
     # News API
     news_api_key: Optional[str] = Field(default=None, env="NEWS_API_KEY")
@@ -103,6 +109,20 @@ class MonitoringConfig(BaseSettings):
     drawdown_threshold: float = Field(default=0.10, description="Drawdown alert threshold")
 
 
+class DatabaseInfo(BaseSettings):
+    """Database info class"""
+    host: str = Field(default="localhost")
+    name: str = Field(default="trading_system")
+    username: str = Field(default="postgres")
+    password: str = Field(default="password")
+
+class NewsInfo(BaseSettings):
+    """News info class"""
+    newsapi_key: Optional[str] = Field(default=None)
+    reddit_client_id: Optional[str] = Field(default=None)
+    reddit_client_secret: Optional[str] = Field(default=None)
+    reddit_user_agent: str = Field(default="TradingBot/1.0")
+
 class SystemConfig(BaseSettings):
     """Main system configuration"""
     
@@ -115,22 +135,24 @@ class SystemConfig(BaseSettings):
     # Environment
     environment: str = Field(default="development", env="ENVIRONMENT")
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
-    secret_key: str = Field(..., env="SECRET_KEY")
+    secret_key: str = Field(default="dev-secret-key", env="SECRET_KEY")
     
     # Database
-    database_url: str = Field(..., env="DATABASE_URL")
-    timescale_url: str = Field(..., env="TIMESCALE_URL")
-    redis_url: str = Field(..., env="REDIS_URL")
+    database_url: str = Field(default="postgresql://postgres:password@localhost:5432/trading_system", env="DATABASE_URL")
+    timescale_url: str = Field(default="postgresql://postgres:password@localhost:5432/trading_system", env="TIMESCALE_URL")
+    redis_url: str = Field(default="redis://localhost:6379", env="REDIS_URL")
     
     # Celery
-    celery_broker_url: str = Field(..., env="CELERY_BROKER_URL")
-    celery_result_backend: str = Field(..., env="CELERY_RESULT_BACKEND")
+    celery_broker_url: str = Field(default="redis://localhost:6379/0", env="CELERY_BROKER_URL")
+    celery_result_backend: str = Field(default="redis://localhost:6379/1", env="CELERY_RESULT_BACKEND")
     
     # Sub-configurations
     trading: TradingConfig = Field(default_factory=TradingConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     ml: MLConfig = Field(default_factory=MLConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    database: DatabaseInfo = Field(default_factory=DatabaseInfo)
+    news: NewsInfo = Field(default_factory=NewsInfo)
 
 
 class ConfigManager:
@@ -173,7 +195,7 @@ class ConfigManager:
         
         return self._system_config
     
-    def get_database_config(self) -> DatabaseConfig:
+    def get_database_config(self) -> ConfigDatabaseSettings:
         """Get database configuration"""
         config = self.get_system_config()
         yaml_config = self.load_yaml_config()
@@ -185,7 +207,7 @@ class ConfigManager:
             'echo': config.environment == 'development'
         }
         
-        return DatabaseConfig(**db_config)
+        return ConfigDatabaseSettings(**db_config)
     
     def get_redis_config(self) -> RedisConfig:
         """Get Redis configuration"""
@@ -239,7 +261,7 @@ def get_config() -> SystemConfig:
     return config_manager.get_system_config()
 
 
-def get_database_config() -> DatabaseConfig:
+def get_database_config() -> ConfigDatabaseSettings:
     """Get database configuration"""
     return config_manager.get_database_config()
 
