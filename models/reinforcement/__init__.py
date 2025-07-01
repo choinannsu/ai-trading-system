@@ -26,6 +26,24 @@ from .agents import (
     CentralCritic, AgentType, CommunicationMode, create_multi_agent_system
 )
 
+# Import distributed training components
+from .distributed_training import (
+    DistributedConfig, TrainingMetrics, DistributedWorker, ParameterServer,
+    DistributedTrainingManager, create_distributed_trainer, run_distributed_training
+)
+
+# Import hyperparameter optimization
+from .hyperparameter_optimization import (
+    HyperparameterSpace, OptimizationConfig, OptimizationResult,
+    HyperparameterOptimizer, create_hyperparameter_optimizer, optimize_agent_hyperparameters
+)
+
+# Import monitoring system
+from .monitoring import (
+    MonitoringConfig, MetricSnapshot, RealTimeMonitor, 
+    create_monitor, start_monitoring_dashboard
+)
+
 
 # Factory functions for easy agent creation
 def create_agent(agent_type: str, obs_dim: int, action_dim: int, config: dict = None):
@@ -149,6 +167,30 @@ __all__ = [
     'AgentType',
     'CommunicationMode',
     'create_multi_agent_system',
+    
+    # Distributed Training
+    'DistributedConfig',
+    'TrainingMetrics',
+    'DistributedWorker',
+    'ParameterServer',
+    'DistributedTrainingManager',
+    'create_distributed_trainer',
+    'run_distributed_training',
+    
+    # Hyperparameter Optimization
+    'HyperparameterSpace',
+    'OptimizationConfig',
+    'OptimizationResult',
+    'HyperparameterOptimizer',
+    'create_hyperparameter_optimizer',
+    'optimize_agent_hyperparameters',
+    
+    # Monitoring System
+    'MonitoringConfig',
+    'MetricSnapshot',
+    'RealTimeMonitor',
+    'create_monitor',
+    'start_monitoring_dashboard',
     
     # Factory functions
     'create_agent',
